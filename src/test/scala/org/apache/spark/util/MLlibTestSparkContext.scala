@@ -17,7 +17,7 @@
 
 package org.apache.spark.util
 
-import org.scalatest.{Suite, BeforeAndAfterAll}
+import org.scalatest.{BeforeAndAfterAll, Suite}
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}

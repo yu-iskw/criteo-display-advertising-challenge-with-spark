@@ -1,6 +1,9 @@
 package org.apache.spark.examples.ml
 
-import org.apache.spark.sql.{DataFrame, SQLContext}
+import org.apache.spark.ml.feature.{OneHotEncoder, StringIndexer}
+import org.apache.spark.ml.{Pipeline, PipelineStage}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 import org.apache.spark.{Logging, SparkConf, SparkContext}
 
 class CriteoDisplayAdvertisingChallenge {
@@ -8,6 +11,23 @@ class CriteoDisplayAdvertisingChallenge {
 }
 
 object CriteoDisplayAdvertisingChallenge extends Logging {
+
+  private[examples] val labelColumn = "label"
+
+  private[examples] val numericalColumns = Array(
+    "i1", "i2", "i3", "i4", "i5",
+    "i6", "i7", "i8", "i9", "i10",
+    "i11", "i12", "i13"
+  )
+
+  private[examples] val categoricalColumns = Array(
+    "c1", "c2", "c3", "c4", "c5",
+    "c6", "c7", "c8", "c9", "c10",
+    "c11", "c12", "c13", "c14", "c15",
+    "c16", "c17", "c18", "c19", "c20",
+    "c21", "c22", "c23", "c24", "c25",
+    "c26"
+  )
 
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName(this.getClass.getSimpleName)
@@ -22,44 +42,46 @@ object CriteoDisplayAdvertisingChallenge extends Logging {
 
   private[examples]
   def createDataFrame(sc: SparkContext, sqlContext: SQLContext, path: String): DataFrame = {
-    import sqlContext.implicits._
 
-    val rdd = sc.textFile(path).map {line =>
-      try {
-        Some(parse(line))
-      } catch {
-        case _ => None
-      }
-    }
-    rdd.filter(_.isDefined).map(_.get).toDF()
+    val rdd = sc.textFile(path).map(line => parse(line))
+    val schema = getSchema
+    sqlContext.createDataFrame(rdd, schema)
   }
 
   private[examples]
-  def parse(line: String): ClickData = {
-    val elms = line.split("""( |\t)""")
-    ClickData(
-      elms(0).toDouble,
-      elms(1).toInt, elms(2).toInt, elms(3).toInt, elms(4).toInt, elms(5).toInt,
-      elms(6).toInt, elms(7).toInt, elms(8).toInt, elms(9).toInt, elms(10).toInt,
-      elms(11).toInt, elms(12).toInt, elms(13).toInt,
-      elms(14), elms(15), elms(16), elms(17), elms(18), 
-      elms(19), elms(20), elms(21), elms(22), elms(23),
-      elms(24), elms(25), elms(26), elms(27), elms(28),
-      elms(29), elms(30), elms(31), elms(32), elms(33),
-      elms(34), elms(35), elms(36), elms(37), elms(38),
-      elms(39)
-    )
+  def encode(df: DataFrame): DataFrame = {
+    val pipeline = new Pipeline()
+    val stages: Array[PipelineStage] = categoricalColumns.flatMap { c =>
+      val indexedCol = s"${c}_index"
+      val vecCol = s"${c}_vec"
+      val strIdx = new StringIndexer()
+        .setInputCol(c)
+        .setOutputCol(indexedCol)
+        .setHandleInvalid("skip")
+      val ohe = new OneHotEncoder()
+        .setInputCol(indexedCol)
+        .setOutputCol(vecCol)
+      Array(strIdx, ohe)
+    }
+    pipeline.setStages(stages)
+    pipeline.fit(df).transform(df)
+  }
+
+  private[examples]
+  def getSchema: StructType = {
+    val fields = Array(StructField("label", DoubleType, false)) ++
+      numericalColumns.map(name => StructField(name, IntegerType, true)) ++
+      categoricalColumns.map(name => StructField(name, StringType, true))
+    StructType(fields)
+  }
+
+  private[examples]
+  def parse(line: String): Row = {
+    val elms = line.split( """\t""")
+    val converted = Seq(elms(0).toDouble) ++
+      (1 to 13).map(i => if (elms(i) == "") null else elms(i).toInt) ++
+      (14 to 39).map(i => elms(i))
+    Row(converted: _*)
   }
 }
 
-case class ClickData(
-  label: Double,
-  i1: Int, i2: Int, i3: Int, i4: Int, i5: Int,
-  i6: Int, i7: Int, i8: Int, i9: Int, i10: Int,
-  i11: Int, i12: Int, i13: Int,
-  c1: String, c2: String, c3: String, c4: String, c5: String,
-  c6: String, c7: String, c8: String, c9: String, c10: String,
-  c11: String, c12: String, c13: String, c14: String, c15: String,
-  c16: String, c17: String, c18: String, c19: String, c110: String,
-  c21: String, c22: String, c23: String, c24: String, c25: String,
-  c26: String)
